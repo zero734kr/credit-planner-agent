@@ -1,0 +1,38 @@
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+
+# ─── ML artifacts (auto-regenerated on retrain) ───
+ml/category_classifier/model.pkl
+
+# ─── User data (personal info) ───
+statements/
+db/credit_planner.db
+logs/decision_log.jsonl
+logs/profile_log.jsonl
+report/*
+
+# ─── OS / Editor ───
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ─── IDE ───
+.vscode/
+.idea/
+
+# ─── FUSE hidden files ───
+db/.fuse_hidden*
+
+# ─── Backup files ───
+*.bak
+
+# ─── Claude Code local settings ───
+.claude/
