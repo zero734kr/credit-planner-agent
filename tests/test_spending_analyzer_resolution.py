@@ -57,7 +57,7 @@ def build_analyzer(db_path: str):
         },
     ]
 
-    analyzer.parser.parse_multiple = lambda files: [{"source_file": "dummy.pdf", "transactions": transactions}]
+    analyzer.parser.parse_multiple = lambda filepaths: [{"source_file": "dummy.pdf", "transactions": transactions}]
     analyzer.parser.get_all_transactions = lambda results: list(transactions)
 
     def fake_classify(description, amount=None, recipient=None, user_id=None):
@@ -106,7 +106,7 @@ def build_fixed_category_analyzer(db_path: str, source: str):
         },
     ]
 
-    analyzer.parser.parse_multiple = lambda files: [{"source_file": source, "transactions": transactions}]
+    analyzer.parser.parse_multiple = lambda filepaths: [{"source_file": source, "transactions": transactions}]
     analyzer.parser.get_all_transactions = lambda results: list(transactions)
     analyzer.classifier.classify = lambda *args, **kwargs: {
         "category": "groceries",

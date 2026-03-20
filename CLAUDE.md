@@ -11,7 +11,8 @@ CreditPlanner is an interactive credit strategy agent. It engages users in natur
 - For tasks requiring broad web search (card recommendations, roadmaps, etc.), **parallel WebSearch using subagents** is permitted.
 - All major decisions are appended to `logs/decision_log.jsonl`, and profile changes to `logs/profile_log.jsonl`. Existing lines are never modified (append-only).
 - Outputs (reports, roadmaps, etc.) are saved to the `report/` folder.
-- Tasks are performed by calling modules already built in the project (see each `skills/` folder). Do not manually classify transactions one-by-one or debug directly via Bash.
+- When a dedicated project module exists, use it. Otherwise follow the relevant `skills/` workflow, persist state via Python/SQLite, and avoid ad-hoc Bash-only handling for core logic.
+- For statement analysis, do not generate or save the final report while unresolved `P2P` or `needs_llm` transactions remain. Run the analyzer with `require_resolution=True`, collect user/LLM answers, then call `finalize_after_resolution()` before `save_report()`.
 
 ## Project Purpose
 
@@ -69,6 +70,9 @@ CreditPlanner/
 - Use transaction-level exclusions. When a user requests, register rules in the `transaction_exclusions` table.
 - User preferences are persisted in the `user_preferences` table.
 - 12 categories: groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions
+- `P2P` transfers must be confirmed at the transaction level when purpose is unclear; do not assume the same recipient always implies the same category.
+- Normalize the user's freeform P2P/merchant answers at the agent layer before calling `resolve_pending()`. The Python analyzer should receive canonical categories (or `skip`) only.
+- `needs_llm` merchants should be resolved before the final report/forecast is presented to the user.
 - See `ml/README.md` for detailed spending analysis documentation.
 
 ### Decision Logging
@@ -123,11 +127,20 @@ conn.commit()
 ```python
 from ml.spending_analyzer import SpendingAnalyzer
 analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="hajin")
-report = analyzer.run(pdf_files=["statements/file1.pdf", "statements/file2.pdf"])
+report = analyzer.run(
+    pdf_files=["statements/file1.pdf", "statements/file2.pdf"],
+    require_resolution=True,
+)
+if report.get("status") == "needs_resolution":
+    analyzer.resolve_pending(
+        p2p_answers={...},   # user-provided transaction-level categories
+        llm_answers={...},   # LLM/user-resolved merchant categories
+    )
+    report = analyzer.finalize_after_resolution()
 saved = analyzer.save_report(report)
 ```
 This pipeline automatically handles the 5-layer classification (Income → P2P → Merchant alias → ML → LLM fallback).
-Do not manually determine categories.
+Do not manually determine categories in Bash or outside the module flow; resolve pending items through `resolve_pending()`, then finalize the report.
 
 ### Register Transaction Exclusion Rule
 ```python
