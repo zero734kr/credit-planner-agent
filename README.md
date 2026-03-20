@@ -1,4 +1,4 @@
-# CreditPlanner Human Guide
+# CreditPlanner Guide for Humans
 
 > This guide is for those new to using the CreditPlanner AI agent.
 > CreditPlanner is an interactive AI agent that analyzes your credit profile and provides recommendations based on natural language.
