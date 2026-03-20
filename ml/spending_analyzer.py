@@ -22,14 +22,14 @@ import json
 import sqlite3
 from datetime import datetime
 from collections import defaultdict, Counter
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 
 # Module path setup
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
 from ml.statement_parser import StatementParser
-from ml.category_classifier.classifier import TransactionClassifier
+from ml.category_classifier.classifier import TransactionClassifier, ALL_CATEGORIES
 
 
 class SpendingAnalyzer:
@@ -48,6 +48,7 @@ class SpendingAnalyzer:
         self.classifier.load_or_train()
 
         # Analysis results storage
+        self.parsed_results = []
         self.all_transactions = []
         self.classified_transactions = []
         self.excluded_transactions = []  # Transactions excluded by user preferences
@@ -56,7 +57,16 @@ class SpendingAnalyzer:
         self.stats = {}
         self.exclusion_rules = []  # Exclusion rules loaded from DB
 
-    def run(self, pdf_files: List[str] | None = None, csv_files: List[str] | None = None) -> Dict:
+    _SKIP_TOKENS = {"skip"}
+
+    def run(
+        self,
+        pdf_files: List[str] | None = None,
+        csv_files: List[str] | None = None,
+        llm_resolver: Callable[[Dict], Optional[str]] | None = None,
+        p2p_resolver: Callable[[Dict], Optional[str]] | None = None,
+        require_resolution: bool = False,
+    ) -> Dict:
         """
         Execute the full pipeline
 
@@ -94,6 +104,7 @@ class SpendingAnalyzer:
         # ── Step 1: Parse PDFs ──
         print("[1/6] Parsing PDFs...")
         parsed_results = self.parser.parse_multiple(files)
+        self.parsed_results = parsed_results
         self.all_transactions = self.parser.get_all_transactions(parsed_results)
         print(f"      → {len(self.all_transactions)} transactions extracted\n")
 
@@ -107,20 +118,213 @@ class SpendingAnalyzer:
         self._apply_exclusions()
         print(f"      → {len(self.excluded_transactions)} transactions excluded\n")
 
-        # ── Step 4: DB ingestion ──
-        print("[4/6] Ingesting into SQLite...")
+        # ── Step 4: Resolve pending classifications (optional) ──
+        print("[4/7] Resolving pending classifications...")
+        self.resolve_pending(llm_resolver=llm_resolver, p2p_resolver=p2p_resolver)
+        pending = self.get_pending_resolutions()
+        pending_count = len(pending["p2p_questions"]) + len(pending["llm_needed"])
+        print(f"      → {pending_count} unresolved after resolver pass\n")
+
+        if require_resolution and pending_count:
+            print("[stop] Resolution required before DB ingestion/report generation\n")
+            return self._build_pending_resolution_result()
+
+        return self.finalize_after_resolution()
+
+    def _resolution_key(self, tx: Dict) -> str:
+        """Stable key for matching pending resolutions back to a transaction."""
+        return "|".join([
+            tx.get("date", ""),
+            tx.get("description", ""),
+            f"{float(tx.get('amount', 0)):.2f}",
+            tx.get("source", ""),
+            tx.get("card_name", ""),
+        ])
+
+    def _normalize_resolution_category(self, category: str | None) -> str | None:
+        if not category:
+            return None
+        normalized = category.strip().lower()
+        return normalized if normalized in ALL_CATEGORIES else None
+
+    def _is_skip_resolution(self, category: str | None) -> bool:
+        if not category:
+            return False
+        return category.strip().lower() in self._SKIP_TOKENS
+
+    def _exclude_transaction(self, tx: Dict, reason: str) -> None:
+        tx["excluded"] = True
+        tx["exclusion_reason"] = reason
+        tx["classify_method"] = "user_excluded"
+        if tx not in self.excluded_transactions:
+            self.excluded_transactions.append(tx)
+
+    def get_pending_resolutions(self) -> Dict[str, List[Dict]]:
+        """Return unresolved P2P and LLM classifications with stable keys."""
+        p2p_questions = []
+        for q in self.p2p_questions:
+            item = dict(q)
+            item["resolution_key"] = item.get("resolution_key") or self._resolution_key(item["transaction"])
+            p2p_questions.append(item)
+
+        llm_needed = []
+        for tx in self.llm_needed:
+            llm_needed.append({
+                "resolution_key": tx.get("resolution_key") or self._resolution_key(tx),
+                "date": tx.get("date"),
+                "description": tx.get("description"),
+                "amount": tx.get("amount"),
+                "ml_suggestion": tx.get("ml_suggestion"),
+                "ml_top3": tx.get("ml_top3"),
+            })
+
+        return {
+            "p2p_questions": p2p_questions,
+            "llm_needed": llm_needed,
+        }
+
+    def resolve_pending(
+        self,
+        p2p_answers: Dict[str, str] | None = None,
+        llm_answers: Dict[str, str] | None = None,
+        llm_resolver: Callable[[Dict], Optional[str]] | None = None,
+        p2p_resolver: Callable[[Dict], Optional[str]] | None = None,
+    ) -> Dict[str, int]:
+        """
+        Apply provided answers and/or callback resolvers to unresolved transactions.
+
+        Args:
+            p2p_answers: mapping of resolution_key -> category
+            llm_answers: mapping of resolution_key -> category
+            llm_resolver: callback invoked for each pending LLM item
+            p2p_resolver: callback invoked for each pending P2P question
+        """
+        p2p_answers = dict(p2p_answers or {})
+        llm_answers = dict(llm_answers or {})
+
+        if p2p_resolver:
+            for q in self.p2p_questions:
+                key = q.get("resolution_key") or self._resolution_key(q["transaction"])
+                if key not in p2p_answers:
+                    p2p_answers[key] = p2p_resolver(dict(q))
+
+        if llm_resolver:
+            for tx in self.llm_needed:
+                key = tx.get("resolution_key") or self._resolution_key(tx)
+                if key not in llm_answers:
+                    llm_answers[key] = llm_resolver(dict(tx))
+
+        resolved_p2p = 0
+        skipped_p2p = 0
+        remaining_p2p = []
+        p2p_history_updates = defaultdict(set)
+        for q in self.p2p_questions:
+            key = q.get("resolution_key") or self._resolution_key(q["transaction"])
+            answer = p2p_answers.get(key)
+            if self._is_skip_resolution(answer):
+                self._exclude_transaction(q["transaction"], "user_marked_skip")
+                skipped_p2p += 1
+                continue
+
+            category = self._normalize_resolution_category(answer)
+            if not category:
+                remaining_p2p.append(q)
+                continue
+
+            tx = q["transaction"]
+            tx["category"] = category
+            tx["confidence"] = 1.0
+            tx["classify_method"] = "p2p_resolved"
+            recipient = q.get("recipient")
+            if recipient:
+                p2p_history_updates[recipient].add(category)
+            resolved_p2p += 1
+
+        resolved_llm = 0
+        skipped_llm = 0
+        remaining_llm = []
+        for tx in self.llm_needed:
+            key = tx.get("resolution_key") or self._resolution_key(tx)
+            answer = llm_answers.get(key)
+            if self._is_skip_resolution(answer):
+                self._exclude_transaction(tx, "user_marked_skip")
+                skipped_llm += 1
+                continue
+
+            category = self._normalize_resolution_category(answer)
+            if not category:
+                remaining_llm.append(tx)
+                continue
+
+            tx["category"] = category
+            tx["confidence"] = 1.0
+            tx["classify_method"] = "llm_resolved"
+            self.classifier.distill_from_llm(
+                self._clean_description(tx.get("description", "")),
+                category,
+            )
+            resolved_llm += 1
+
+        self.p2p_questions = remaining_p2p
+        self.llm_needed = remaining_llm
+        self.classified_transactions = [
+            tx for tx in self.classified_transactions
+            if not tx.get("excluded")
+        ]
+
+        for recipient, categories in p2p_history_updates.items():
+            # Persist a default only when the recipient was consistently categorized.
+            if len(categories) == 1:
+                self.classifier.save_p2p_category(
+                    self.user_id,
+                    recipient,
+                    next(iter(categories)),
+                )
+
+        return {
+            "resolved_p2p": resolved_p2p,
+            "resolved_llm": resolved_llm,
+            "skipped_p2p": skipped_p2p,
+            "skipped_llm": skipped_llm,
+            "remaining_p2p": len(self.p2p_questions),
+            "remaining_llm": len(self.llm_needed),
+        }
+
+    def _build_pending_resolution_result(self) -> Dict:
+        """Return a non-final result that tells the caller more input is needed."""
+        pending = self.get_pending_resolutions()
+        return {
+            "status": "needs_resolution",
+            "resolution_required": True,
+            "total_parsed": len(self.all_transactions),
+            "total_classified": len(self.classified_transactions),
+            "total_excluded": len(self.excluded_transactions),
+            "p2p_questions": pending["p2p_questions"],
+            "llm_needed": pending["llm_needed"],
+            "message": "Resolve pending P2P and/or LLM classifications before generating the final report.",
+        }
+
+    def finalize_after_resolution(self) -> Dict:
+        """Continue the pipeline after pending classifications have been resolved."""
+        pending = self.get_pending_resolutions()
+        if pending["p2p_questions"] or pending["llm_needed"]:
+            return self._build_pending_resolution_result()
+
+        # ── Step 5: DB ingestion ──
+        print("[5/7] Ingesting into SQLite...")
         inserted = self._insert_to_db()
         print(f"      → {inserted} rows inserted (duplicates excluded)\n")
 
-        # ── Step 5: Recurring detection ──
-        print("[5/6] Detecting recurring payments...")
+        # ── Step 6: Recurring detection ──
+        print("[6/7] Detecting recurring payments...")
         recurring = self._detect_recurring()
         print(f"      → {len(recurring)} recurring items detected\n")
 
-        # ── Step 6: Aggregate + Report ──
-        print("[6/6] Generating analysis report...")
+        # ── Step 7: Aggregate + Report ──
+        print("[7/7] Generating analysis report...")
         self._aggregate_spending()
-        report = self._generate_report(parsed_results, recurring)
+        report = self._generate_report(self.parsed_results, recurring)
+        report["total_inserted"] = inserted
         print(f"      → Report generation complete\n")
 
         return report
@@ -387,9 +591,11 @@ class SpendingAnalyzer:
             tx["category"] = result["category"]
             tx["confidence"] = result.get("confidence", 0)
             tx["classify_method"] = result["method"]
+            tx["resolution_key"] = self._resolution_key(tx)
 
             if result.get("needs_user_input"):
                 self.p2p_questions.append({
+                    "resolution_key": tx["resolution_key"],
                     "transaction": tx,
                     "prompt": result["user_prompt"],
                     "recipient": result.get("p2p_recipient"),
@@ -431,32 +637,50 @@ class SpendingAnalyzer:
     # ──────────────────────────────────────────────────
 
     def _insert_to_db(self) -> int:
-        """Ingest classified transactions into SQLite (with deduplication)"""
+        """Refresh imported statement sources in SQLite using the latest classifications."""
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
 
-        # Query existing transaction hashes (deduplication)
-        cur.execute("""
-            SELECT tx_date, description, amount, card_name
-            FROM transactions WHERE user_id = ?
-        """, (self.user_id,))
-        existing = set()
-        for row in cur.fetchall():
-            existing.add((row[0], row[1][:50], round(float(row[2] or 0), 2), row[3]))
+        sources = sorted({tx.get("source", "") for tx in self.classified_transactions if tx.get("source")})
+        if sources:
+            placeholders = ",".join("?" for _ in sources)
+            cur.execute(
+                f"DELETE FROM transactions WHERE user_id = ? AND source IN ({placeholders})",
+                (self.user_id, *sources),
+            )
 
         inserted = 0
+        seen = set()
         for tx in self.classified_transactions:
-            # Dedup check
+            if tx.get("excluded"):
+                continue
+
             key = (
                 tx.get("date", ""),
                 tx.get("description", "")[:50],
                 round(tx.get("amount", 0), 2),
                 tx.get("card_name", ""),
             )
-            if key in existing:
+            if key in seen:
                 continue
 
             category = tx.get("category") or "uncategorized"
+
+            # Replace any previously imported identical transaction regardless of source.
+            cur.execute("""
+                DELETE FROM transactions
+                WHERE user_id = ?
+                  AND tx_date = ?
+                  AND description = ?
+                  AND amount = ?
+                  AND IFNULL(card_name, '') = IFNULL(?, '')
+            """, (
+                self.user_id,
+                tx.get("date"),
+                tx.get("description"),
+                tx.get("amount", 0),
+                tx.get("card_name", ""),
+            ))
 
             cur.execute("""
                 INSERT INTO transactions (user_id, tx_date, description, amount, category, source, card_name)
@@ -470,7 +694,7 @@ class SpendingAnalyzer:
                 tx.get("source", ""),
                 tx.get("card_name", ""),
             ))
-            existing.add(key)
+            seen.add(key)
             inserted += 1
 
         conn.commit()
@@ -615,6 +839,8 @@ class SpendingAnalyzer:
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
 
+        cur.execute("DELETE FROM recurring_transactions WHERE user_id = ?", (self.user_id,))
+
         for r in recurring:
             cur.execute("""
                 INSERT OR REPLACE INTO recurring_transactions
@@ -643,7 +869,7 @@ class SpendingAnalyzer:
         card_total = defaultdict(float)
 
         for tx in self.classified_transactions:
-            cat = tx.get("category", "uncategorized")
+            cat = tx.get("category") or "uncategorized"
             if cat in ("income", "card_payment", "payment"):
                 continue
 
@@ -676,6 +902,9 @@ class SpendingAnalyzer:
 
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
+
+        # Rebuild the user's aggregate view from current transaction data.
+        cur.execute("DELETE FROM spending_pattern WHERE user_id = ?", (self.user_id,))
 
         for cat, totals in cat_months.items():
             avg = round(sum(totals) / len(totals))
@@ -832,6 +1061,9 @@ class SpendingAnalyzer:
 
         Returns: list of saved file paths
         """
+        if report.get("status") == "needs_resolution":
+            raise ValueError("Cannot save final report while classifications still need resolution.")
+
         if output_dir is None:
             output_dir = os.path.join(BASE_DIR, "report")
         os.makedirs(output_dir, exist_ok=True)

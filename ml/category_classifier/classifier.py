@@ -581,8 +581,8 @@ class TransactionClassifier:
                 "needs_user_input": True,
                 "user_prompt": (
                     f"Transfer to {extracted_recipient}: ${amount or '?'} — "
-                    f"What is the purpose of this transfer? "
-                    f"(e.g., dining, groceries, rent, gift, etc.)"
+                    f"What is the best spending category for this transfer? "
+                    f"Use one of: {', '.join(ALL_CATEGORIES)}, or 'skip' to exclude it."
                 ),
                 "p2p_recipient": extracted_recipient,
                 "previous_category": None,

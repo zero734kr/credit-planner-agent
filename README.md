@@ -75,8 +75,25 @@ Transactions are classified into 12 categories: groceries, dining, gas, travel, 
 
 Classification is handled automatically through a 5-step pipeline. Most transactions are categorized automatically, but the agent may ask you about:
 
-- **P2P transfers (Zelle, Venmo, etc.)**: "What was the $30 payment to John for?" — Once you answer, future transfers to the same recipient are automatically categorized the same way.
+- **P2P transfers (Zelle, Venmo, etc.)**: "What was the $30 payment to John for?" — The agent should resolve these transaction-by-transaction into one of the 12 spending categories, or exclude/skip them if they should not count toward spending.
 - **Amount-based inference at merchants**: A $150 Walmart transaction is inferred as groceries, while a $15 one is shopping. Similarly, Wawa/Sheetz transactions of $20+ are inferred as gas, under $20 as dining.
+
+### Resolution Before Final Report
+
+Spending analysis now runs in two phases:
+
+1. **Draft classification pass** — parse statements, classify what can be classified, and identify unresolved items.
+2. **Finalization pass** — ask you about unresolved P2P transfers and resolve low-confidence merchant items before saving the final report.
+
+This means a final spending report should not be generated while unresolved `P2P` or `needs_llm` transactions are still pending.
+
+In practice, the agent should:
+- batch P2P questions together instead of asking one by one
+- resolve low-confidence merchant items through the LLM fallback path
+- normalize freeform user answers into canonical categories before passing them into the Python analyzer
+- regenerate/finalize the report only after those items are categorized
+
+This is especially important for forecasting and signup-bonus planning, because unresolved transfers and merchants can materially distort your spending baseline.
 
 ### Excluding Specific Transactions
 
@@ -110,6 +127,8 @@ After analysis, two types of reports are saved in the `report/` folder:
 
 1. **Summary Report** (`report/spending_analysis_YYYYMMDD.md`) — category breakdown across the full period, recurring charges, classification stats, etc.
 2. **Monthly Details** (`report/monthly/YYYY-MM.md`) — all transactions for that month, breakdown by category, excluded items, etc.
+
+If the analyzer still has unresolved P2P or low-confidence merchant transactions, it should pause and ask for answers first instead of saving a final report immediately.
 
 ---
 

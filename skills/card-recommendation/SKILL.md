@@ -30,9 +30,9 @@ WebSearch query examples:
 ```
 
 **Search source priority:**
-1. Doctor of Credit — Best Current Credit Card Offers
-2. US Credit Card Guide
-3. Official issuer websites
+1. Official issuer websites
+2. Doctor of Credit — Best Current Credit Card Offers
+3. US Credit Card Guide
 4. The Points Guy — current offers
 
 Cache search results in `search_cache` table (TTL: 24 hours).

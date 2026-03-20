@@ -47,7 +47,7 @@ all_txs = parser.get_all_transactions(results)
 
 ### Pipeline (6 stages)
 1. Load user exclusion rules (`transaction_exclusions` table)
-2. PDF parsing (StatementParser)
+2. Statement parsing (PDF/CSV via StatementParser)
 3. Transaction classification (5-layer pipeline)
 4. Apply user exclusion rules (transaction level)
 5. SQLite ingestion + Recurring detection
@@ -78,6 +78,15 @@ prefs = SpendingAnalyzer.get_preferences(db, "hajin")
 
 ### Report Saving
 ```python
+report = analyzer.run(pdf_files=[...], require_resolution=True)
+if report.get("status") == "needs_resolution":
+    # Normalize freeform answers at the agent layer first, then resolve.
+    analyzer.resolve_pending(
+        p2p_answers={...},
+        llm_answers={...},
+    )
+    report = analyzer.finalize_after_resolution()
+
 saved_files = analyzer.save_report(report, output_dir="report/")
 # → report/spending_analysis_YYYYMMDD.md  (comprehensive)
 # → report/monthly/YYYY-MM.md             (monthly detail, includes transaction list)

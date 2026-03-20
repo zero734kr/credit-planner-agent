@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
+from db.init_db import init_db
+
 DB_PATH = os.path.join(PROJECT_ROOT, "db", "test_credit_planner.db")
 LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
 
@@ -37,6 +39,7 @@ print("━━━━ CreditPlanner Integration Tests ━━━━\n")
 
 # ═══ 1. DB Schema Validation ═══
 print("1. DB Schema Validation")
+init_db(DB_PATH)
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 
@@ -167,7 +170,7 @@ test(f"Citi DC cooldown check ({citi_days} days elapsed, requires 180 days)",
 print("\n5. ML Category Classifier")
 
 from ml.category_classifier.classifier import TransactionClassifier
-clf = TransactionClassifier()
+clf = TransactionClassifier(db_path=DB_PATH)
 clf.load_or_train()
 
 test_cases = {
@@ -203,6 +206,27 @@ forecast = predictor.predict_monthly("test_user", 3)
 test("Forecast category count", len(forecast) == 4)
 test("Groceries forecast exists", "groceries" in forecast)
 test("Groceries monthly average = $700", forecast.get("groceries", {}).get("monthly_avg") == 700)
+
+# Transaction data should ignore non-spending categories when present
+cur.execute("DELETE FROM transactions WHERE user_id='forecast_filter_user'")
+transaction_rows = [
+    ("forecast_filter_user", "2026-01-05", "Payroll", 3000, "income", "test", "Checking"),
+    ("forecast_filter_user", "2026-01-10", "Card Payment", 500, "card_payment", "test", "Checking"),
+    ("forecast_filter_user", "2026-01-12", "Unknown Transfer", 200, "uncategorized", "test", "Checking"),
+    ("forecast_filter_user", "2026-01-15", "Whole Foods", 120, "groceries", "test", "Card"),
+    ("forecast_filter_user", "2026-02-15", "Whole Foods", 180, "groceries", "test", "Card"),
+]
+cur.executemany("""
+    INSERT INTO transactions (user_id, tx_date, description, amount, category, source, card_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+""", transaction_rows)
+conn.commit()
+
+filtered_forecast = predictor.predict_monthly("forecast_filter_user", 2)
+test("Filtered forecast excludes income/card payment/uncategorized",
+     set(filtered_forecast.keys()) == {"groceries"})
+test("Filtered groceries average uses spending only",
+     filtered_forecast.get("groceries", {}).get("monthly_avg") == 150.0)
 
 # Min spend feasibility assessment
 result = predictor.can_meet_minimum_spend("test_user", 4000, 3)
@@ -268,11 +292,6 @@ for path in expected_paths:
 
 # ═══ Cleanup ═══
 conn.close()
-
-# Copy DB file back to mount folder
-import shutil
-FINAL_DB = os.path.join(PROJECT_ROOT, "db", "credit_planner.db")
-shutil.copy2(DB_PATH, FINAL_DB)
 
 print(f"\n{'━' * 40}")
 print(f"Results: {passed} passed / {failed} failed / {passed + failed} total")

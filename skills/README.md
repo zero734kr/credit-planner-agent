@@ -2,7 +2,7 @@
 
 ## Overview
 
-Each skill is a prompt + instruction guide that the agent references when performing specific tasks. Defines conversation flow, required questions, output format, etc.
+Each skill is a prompt + instruction guide that the agent references when performing specific tasks. Some skills call dedicated Python modules; others define the workflow the agent should execute using Python, SQLite, web search, and report/log outputs.
 
 ## Skill List
 
@@ -21,3 +21,4 @@ Each skill is a prompt + instruction guide that the agent references when perfor
 2. Follow instructions in SKILL.md to conduct conversation
 3. Record decisions in `logs/decision_log.jsonl`
 4. Save outputs to `report/` folder
+5. For statement analysis, treat unresolved `P2P` and `needs_llm` items as a gating step. Ask/resolve them before generating the final saved report.

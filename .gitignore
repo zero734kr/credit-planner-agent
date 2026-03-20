@@ -13,6 +13,7 @@ ml/category_classifier/model.pkl
 # ─── User data (personal info) ───
 statements/
 db/credit_planner.db
+db/test_credit_planner.db
 logs/decision_log.jsonl
 logs/profile_log.jsonl
 report/*

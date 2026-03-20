@@ -56,13 +56,14 @@ P2P transfers have unknown purpose, so user must be asked:
 [Auto] "ZELLE TO JOHN DOE" detected → check p2p_history
   ├─ Previous record exists (e.g., JOHN DOE → dining)
   │   → "Previously classified transfers to JOHN DOE as 'dining'. Same category this time?"
-  │   → User confirms/changes → update p2p_history
+  │   → User confirms/changes → update p2p_history if consistent
   └─ No previous record
-      → "You sent $30 to JOHN DOE — what was this for? (dining, groceries, rent, gift, etc.)"
-      → User responds → save to p2p_history → next time same recipient is auto-classified
+      → "You sent $30 to JOHN DOE — which spending category best fits this transfer?"
+      → Agent normalizes the user's answer into one of the 12 canonical categories (or `skip`)
+      → Save to p2p_history only when the recipient has a consistent category pattern
 ```
 
-**Key**: If you Zelle a friend for splitting dinner → dining. Send rent to roommate → rent. Lumping everything as "transfer" makes spending analysis inaccurate.
+**Key**: If you Zelle a friend for splitting dinner → dining. If the user answers in freeform language, the agent should normalize that into the closest canonical spending category before calling the Python analyzer.
 
 #### Layer 2: Merchant Alias Normalization + Ambiguous Merchants
 
@@ -99,7 +100,7 @@ LLM Prompt:
  Reply with a single category word only."
 ```
 
-LLM results are **automatically added to training data** (distillation):
+LLM/user-resolved merchant results are **automatically added to training data** (distillation):
 ```python
 classifier.distill_from_llm(description, llm_category)
 # → append to training_data.json → retrain model
@@ -128,6 +129,8 @@ INSERT INTO recurring_transactions (user_id, merchant_pattern, typical_amount, c
 - Separate fixed vs. variable costs for more accurate minimum spend forecasting
 
 ### Step 4: SQLite Ingestion
+
+Only proceed to DB ingestion after unresolved `P2P` and `needs_llm` items have been resolved for a final run. If any remain, return a `needs_resolution` result to the caller instead of ingesting and reporting prematurely.
 
 ```sql
 INSERT INTO transactions (user_id, tx_date, description, amount, category, source, card_name)
@@ -176,6 +179,26 @@ Card optimization insights:
 ```
 
 Report saved to `/report/spending_analysis_{date}.md`.
+
+Before saving the final report, resolve any pending `P2P` questions with the user and any `needs_llm` transactions through the LLM fallback path. Batch P2P prompts together, then regenerate/finalize the report only after those items are classified.
+
+Recommended module flow:
+```python
+from ml.spending_analyzer import SpendingAnalyzer
+
+analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="hajin")
+result = analyzer.run(pdf_files=[...], require_resolution=True)
+
+if result.get("status") == "needs_resolution":
+    # Normalize freeform user answers at the agent layer first.
+    analyzer.resolve_pending(
+        p2p_answers={...},   # transaction-level user answers
+        llm_answers={...},   # resolved low-confidence merchants
+    )
+    result = analyzer.finalize_after_resolution()
+
+saved_files = analyzer.save_report(result)
+```
 
 ### Step 7: Minimum Spend Achievability Assessment
 

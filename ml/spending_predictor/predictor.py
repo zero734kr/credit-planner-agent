@@ -29,9 +29,11 @@ class SpendingPredictor:
         cur.execute("""
             SELECT category,
                    strftime('%Y-%m', tx_date) as month,
-                   SUM(amount) as total
+                   SUM(ABS(amount)) as total
             FROM transactions
             WHERE user_id = ?
+              AND category NOT IN ('income', 'card_payment', 'payment', 'uncategorized')
+              AND category IS NOT NULL
             GROUP BY category, month
             ORDER BY category, month
         """, (user_id,))
