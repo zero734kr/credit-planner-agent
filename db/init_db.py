@@ -12,20 +12,42 @@ import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB_PATH = os.path.join(BASE_DIR, "db", "credit_planner.db")
+LOGS_DIR = os.path.join(BASE_DIR, "logs")
+LOG_FILES = [
+    os.path.join(LOGS_DIR, "decision_log.jsonl"),
+    os.path.join(LOGS_DIR, "profile_log.jsonl"),
+]
+
+def _reset_log_files() -> None:
+    """Clear append-only logs as part of an explicit environment reset."""
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    for path in LOG_FILES:
+        with open(path, "w", encoding="utf-8"):
+            pass
+    print("✓ Reset decision/profile logs")
 
 
-def init_db(db_path: str | None = None) -> str:
+def init_db(db_path: str | None = None, reset: bool = False) -> str:
     """
     Initialize DB (create tables + seed data)
 
     Args:
         db_path: SQLite DB path. If None, use default path in project.
                  When creating a working copy in session, pass session directory path.
+        reset: If True, delete the existing DB file and clear decision/profile logs
+               before reinitializing the environment.
 
     Returns: Actual DB path used
     """
     db_path = db_path or DEFAULT_DB_PATH
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+    if reset:
+        for suffix in ("", "-wal", "-shm"):
+            candidate = db_path + suffix
+            if os.path.exists(candidate):
+                os.remove(candidate)
+        _reset_log_files()
 
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
@@ -359,6 +381,11 @@ def init_db(db_path: str | None = None) -> str:
 
 if __name__ == "__main__":
     import sys
-    # CLI: python init_db.py [optional_db_path]
-    custom_path = sys.argv[1] if len(sys.argv) > 1 else None
-    init_db(custom_path)
+    # CLI: python init_db.py [optional_db_path] [--reset]
+    args = [arg for arg in sys.argv[1:] if arg]
+    reset = False
+    if "--reset" in args:
+        reset = True
+        args.remove("--reset")
+    custom_path = args[0] if args else None
+    init_db(custom_path, reset=reset)

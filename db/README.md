@@ -102,6 +102,7 @@ CREATE TABLE transaction_exclusions (
 ```python
 from db.init_db import init_db
 init_db()  # Create tables + seed churning rules/CLI policies
+init_db(reset=True)  # Recreate DB and clear decision/profile logs
 ```
 
 ## Churning Rules Seed (14 issuers)
