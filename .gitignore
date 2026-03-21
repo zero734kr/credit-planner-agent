@@ -17,6 +17,7 @@ db/test_credit_planner.db
 logs/decision_log.jsonl
 logs/profile_log.jsonl
 report/*
+!report/README.md
 
 # ─── OS / Editor ───
 .DS_Store
