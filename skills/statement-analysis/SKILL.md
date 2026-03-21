@@ -83,8 +83,8 @@ When amount alone can't decide (Amazon, etc.), pass to ML.
 
 Classify using `ml/category_classifier/` model. Adopt if confidence >= 15%.
 
-**12 categories:**
-groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions
+**14 categories:**
+groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions, housing, fees
 
 #### Layer 4: LLM Fallback + Auto-Distillation
 
@@ -96,7 +96,8 @@ LLM Prompt:
  Description: {description}
  Amount: ${amount}
  Possible categories: groceries, dining, gas, travel, entertainment,
- utilities, insurance, shopping, transportation, health, education, subscriptions
+ utilities, insurance, shopping, transportation, health, education,
+ subscriptions, housing, fees
  Reply with a single category word only."
 ```
 

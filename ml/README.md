@@ -103,8 +103,8 @@ saved_files = analyzer.save_report(report, output_dir="report/")
 4. **ML Classification**: TF-IDF + Logistic Regression (adopt if confidence >= 15%)
 5. **LLM Fallback + Auto-Distillation**: ML uncertain → LLM inference → auto-add to training data → model retraining
 
-### 12 Categories
-groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions
+### 14 Categories
+groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions, housing, fees
 
 ### LLM Distillation
 Seed 235 → 350+ after distillation. LLM fallback ratio: 68% → 8% decrease.

@@ -706,7 +706,7 @@ class SpendingAnalyzer:
     # ──────────────────────────────────────────────────
 
     # Categories treated as subscription/fixed costs (lower threshold)
-    _SUBSCRIPTION_CATEGORIES = {"subscriptions", "insurance", "utilities", "education"}
+    _SUBSCRIPTION_CATEGORIES = {"subscriptions", "insurance", "utilities", "education", "housing"}
 
     # Merchant keywords likely to be subscriptions
     _SUBSCRIPTION_KEYWORDS = [

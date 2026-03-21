@@ -69,7 +69,7 @@ CreditPlanner/
 - 5-layer classification pipeline: Income → P2P → Merchant alias → ML (TF-IDF+LogReg) → LLM fallback + automatic distillation
 - Use transaction-level exclusions. When a user requests, register rules in the `transaction_exclusions` table.
 - User preferences are persisted in the `user_preferences` table.
-- 12 categories: groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions
+- 14 categories: groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions, housing, fees
 - `P2P` transfers must be confirmed at the transaction level when purpose is unclear; do not assume the same recipient always implies the same category.
 - Normalize the user's freeform P2P/merchant answers at the agent layer before calling `resolve_pending()`. The Python analyzer should receive canonical categories (or `skip`) only.
 - `needs_llm` merchants should be resolved before the final report/forecast is presented to the user.

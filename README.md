@@ -71,11 +71,11 @@ Supported PDF formats:
 
 ### Category Classification
 
-Transactions are classified into 12 categories: groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions.
+Transactions are classified into 14 categories: groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions, housing, fees.
 
 Classification is handled automatically through a 5-step pipeline. Most transactions are categorized automatically, but the agent may ask you about:
 
-- **P2P transfers (Zelle, Venmo, etc.)**: "What was the $30 payment to John for?" — The agent should resolve these transaction-by-transaction into one of the 12 spending categories, or exclude/skip them if they should not count toward spending.
+- **P2P transfers (Zelle, Venmo, etc.)**: "What was the $30 payment to John for?" — The agent should resolve these transaction-by-transaction into one of the 14 spending categories, or exclude/skip them if they should not count toward spending.
 - **Amount-based inference at merchants**: A $150 Walmart transaction is inferred as groceries, while a $15 one is shopping. Similarly, Wawa/Sheetz transactions of $20+ are inferred as gas, under $20 as dining.
 
 ### Resolution Before Final Report
