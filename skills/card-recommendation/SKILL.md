@@ -69,6 +69,7 @@ User wants travel rewards, has 750 FICO:
 ```
   → "best credit cards {year} signup bonus"
   → "doctor of credit best current offers {year}"
+  → "best starter credit cards for beginners no credit history {year}"
   → Ask clarifying questions in parallel with search
 ```
 
@@ -82,7 +83,7 @@ Cache search results in `search_cache` table (TTL: 24 hours).
 
 ### Step 2: Hard Constraint Filtering
 
-Remove ineligible cards via SQLite queries first:
+Remove ineligible cards via SQLite queries first. Apply issuer-specific rules for all relevant issuers.
 
 ```sql
 -- If over 5/24, exclude all Chase cards
