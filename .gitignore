@@ -9,7 +9,6 @@ build/
 
 # ─── ML artifacts (auto-regenerated on retrain) ───
 ml/category_classifier/model.pkl
-ml/category_classifier/training_data.json
 
 # ─── User data (personal info) ───
 statements/
