@@ -112,6 +112,8 @@ CreditPlanner/
 ```bash
 uv sync
 uv run python db/init_db.py
+# Full reset (DB + decision/profile logs)
+uv run python db/init_db.py --reset
 ```
 
 ### Profile Registration (INSERT into DB via Python)
