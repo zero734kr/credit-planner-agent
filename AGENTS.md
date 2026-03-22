@@ -36,6 +36,7 @@ First read the appropriate SKILL.md that matches the user's request, then follow
 - If a user requests annual fee, retention, card retention/cancellation, or downgrade strategies, consult `skills/retention-strategy/SKILL.md`
 - If a user requests roadmap, timeline, plan, or strategy, consult `skills/timeline-builder/SKILL.md`
 - If a user requests exclusion rules, transaction exclusions, or preferences, consult the exclusion system section in `ml/README.md`
+- If a user reports application denial, popup jail, rejection, or any issuer block, consult `skills/card-recommendation/SKILL.md` (Denial/Block Response section)
 - For composite requests (e.g., "Register my profile and analyze my statement"), execute skills sequentially in order.
 
 ## Project Structure

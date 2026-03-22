@@ -233,7 +233,7 @@ def init_db(db_path: str | None = None, reset: bool = False) -> str:
     conn.commit()
 
     # ─── Churning rules seed ───
-    now = datetime.datetime.now(datetime.UTC)
+    now = datetime.datetime.utcnow()
 
     churning_rules = [
         ("Chase", "5/24", "hard_block",
@@ -263,6 +263,22 @@ def init_db(db_path: str | None = None, reset: bool = False) -> str:
         ("Amex", "Max 5 Credit Cards", "hard_block",
          "Max 5 Amex credit cards (charge cards excluded) held simultaneously",
          None, "New cards possible after closing existing card. Charge cards have no limit", now),
+
+        ("Amex", "Popup Jail", "soft_block",
+         "Amex may show 'you are not eligible for this welcome offer' popup during application. "
+         "This is an algorithmic decision by Amex — not a hard rule with fixed thresholds. "
+         "Known risk factors: opening multiple Amex cards in short succession, churning history, "
+         "low spend on existing Amex cards, and closing cards shortly after earning SUB. "
+         "Popup does NOT prevent card approval — only removes the signup bonus.",
+         None,
+         "Not a hard rule — varies by individual. Recovery strategies include: "
+         "increasing organic spend on existing Amex cards, waiting 3-6+ months, "
+         "adding authorized users, putting recurring bills on Amex cards. "
+         "Check via 'apply if you are pre-qualified/approved' flow — if popup appears, "
+         "cancel application (no hard pull incurred). "
+         "Community DPs vary widely — always verify via real-time web search before advising. "
+         "Do NOT make definitive claims about popup causes or timelines without current DPs.",
+         now),
 
         ("Citi", "48 Month Rule", "hard_block",
          "Same card SUB has 48-month cooldown. Must wait 48 months after closing/PC to earn SUB again",

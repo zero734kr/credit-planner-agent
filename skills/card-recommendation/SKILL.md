@@ -188,6 +188,41 @@ Report saved to `/report/card_recommendation_{date}.md`.
 
 → Append to `logs/decision_log.jsonl`.
 
+## Denial / Block Response
+
+When a user reports a denial, popup jail, rejection, or any issuer block:
+
+```sql
+-- Pull ALL rules for the relevant issuer
+SELECT rule_name, rule_type, description, cooldown_months, exception_note
+FROM issuer_churning_rules
+WHERE LOWER(issuer) = LOWER(?);
+
+-- Pull user's recent Amex (or relevant issuer) card history
+SELECT card_name, issuer, opened_date FROM user_cards
+WHERE user_id = ? AND LOWER(issuer) = LOWER(?)
+ORDER BY opened_date DESC;
+```
+
+Cross-reference every returned rule against the user's timeline. For example:
+- User opened 3 Amex cards in 90 days → **2/90 rule violation** (max 2 approvals in 90 days)
+- User opened 2 Amex credit cards in 5 days → **1/5 rule violation**
+- User already holds the same card → **Once Per Lifetime** applies
+
+If the denial doesn't match any hard rule, check `exception_note` fields — soft blocks
+like popup jail have guidance there (e.g., "verify via real-time web search").
+
+Provide advice structured as:
+
+```
+1. Rule Diagnosis — Which specific DB rule(s) explain the denial
+   (cite rule name, e.g., "Amex 2/90 Rule")
+2. Contributing Factors — Soft/algorithmic factors from web search
+   (cite sources, e.g., "per DoC, popup jail persists until...")
+3. Recovery Path — Actionable steps with realistic timelines
+4. Alternative Strategy — If recovery timeline conflicts with user's goals
+```
+
 ## Important Notes
 
 - Card info must always be verified via real-time search. Re-search if cache is older than 24 hours
