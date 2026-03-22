@@ -13,7 +13,6 @@ CreditPlanner is an interactive credit strategy agent. It engages users in natur
 - Outputs (reports, roadmaps, etc.) are saved to the `report/` folder.
 - When a dedicated project module exists, use it. Otherwise follow the relevant `skills/` workflow, persist state via Python/SQLite, and avoid ad-hoc Bash-only handling for core logic.
 - For statement analysis, do not generate or save the final report while unresolved `P2P` or `needs_llm` transactions remain. Run the analyzer with `require_resolution=True`, collect user/LLM answers, then call `finalize_after_resolution()` before `save_report()`.
-- **Git commits**: Only create git commits when the user has explicitly instructed it. Never auto-commit after completing a task.
 
 ## Project Purpose
 
