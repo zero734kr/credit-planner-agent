@@ -112,7 +112,7 @@ Income, card payments, and uncategorized transactions are excluded from all fore
 **With <3 months of data**: Simple arithmetic mean. Trend labeled `insufficient data`.
 
 ### Known Limitations
-- **Partial months**: If the current month is mid-cycle, its partial total pulls the average down. No partial-month normalization yet.
+- **Partial months**: The current (incomplete) month is automatically excluded from WMA and trend inputs to prevent skewing. Only fully elapsed months are used for forecasting.
 - **No seasonality**: Holiday spending spikes (Nov-Dec) and summer travel aren't modeled. Would need 12+ months of data and a seasonal decomposition approach.
 - **Trend is linear**: A sudden spending change (e.g., new subscription) registers as a trend, but the magnitude takes months to stabilize.
 - **Category-level only**: No merchant-level prediction. "Groceries went up" — but not "Costco vs Whole Foods."

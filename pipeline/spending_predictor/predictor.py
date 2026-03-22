@@ -64,10 +64,18 @@ class SpendingPredictor:
         coeffs = np.polyfit(x, values, 1)
         return coeffs[0]  # slope (change per month)
 
+    def _current_month_str(self) -> str:
+        """Return current month as YYYY-MM string."""
+        return datetime.now().strftime("%Y-%m")
+
     def predict_monthly(self, user_id: str, months_ahead: int = 6) -> dict:
         """
         Forecast expected spending for next N months by category
         Returns: {category: {"monthly_avg": float, "predicted_total": float, "trend": str}}
+
+        Note: The current (partial) month is excluded from WMA and trend
+        calculations to avoid skewing the forecast. A month with 10 days
+        of data would otherwise drag the average down significantly.
         """
         monthly_data = self._get_monthly_spending(user_id)
 
@@ -75,11 +83,17 @@ class SpendingPredictor:
             # If no transactions, fall back to spending_pattern table
             return self._fallback_from_spending_pattern(user_id, months_ahead)
 
+        current_month = self._current_month_str()
         predictions = {}
 
         for category, month_totals in monthly_data.items():
-            months_sorted = sorted(month_totals.keys())
+            # Exclude partial current month from forecast inputs
+            months_sorted = [m for m in sorted(month_totals.keys()) if m != current_month]
             values = [month_totals[m] for m in months_sorted]
+
+            if not values:
+                # Only current month data exists — skip this category
+                continue
 
             if len(values) >= 3:
                 # Sufficient data → weighted moving average + trend
