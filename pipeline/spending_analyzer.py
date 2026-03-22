@@ -18,7 +18,6 @@ Usage:
 import os
 import sys
 import re
-import json
 import sqlite3
 from datetime import datetime
 from collections import defaultdict, Counter
@@ -173,8 +172,6 @@ class SpendingAnalyzer:
                 "date": tx.get("date"),
                 "description": tx.get("description"),
                 "amount": tx.get("amount"),
-                "ml_suggestion": tx.get("ml_suggestion"),
-                "ml_top3": tx.get("ml_top3"),
             })
 
         return {
@@ -319,12 +316,14 @@ class SpendingAnalyzer:
         recurring = self._detect_recurring()
         print(f"      → {len(recurring)} recurring items detected\n")
 
-        # ── Step 7: Aggregate + Report ──
-        print("[7/7] Generating analysis report...")
-        self._aggregate_spending()
-        report = self._generate_report(self.parsed_results, recurring)
+        # ── Step 7: Aggregate + Report (cumulative from DB) ──
+        print("[7/7] Generating analysis report (cumulative)...")
+        all_db_txs = self._load_all_transactions_from_db()
+        self._aggregate_spending(all_db_txs)
+        report = self._generate_report(self.parsed_results, recurring,
+                                       all_db_transactions=all_db_txs)
         report["total_inserted"] = inserted
-        print(f"      → Report generation complete\n")
+        print(f"      → Report covers {len(all_db_txs)} cumulative transactions\n")
 
         return report
 
@@ -601,8 +600,6 @@ class SpendingAnalyzer:
                     "previous_category": result.get("previous_category"),
                 })
             elif result["method"] == "needs_llm":
-                tx["ml_suggestion"] = result.get("ml_suggestion")
-                tx["ml_top3"] = result.get("ml_top3")
                 self.llm_needed.append(tx)
 
             self.classified_transactions.append(tx)
@@ -699,6 +696,38 @@ class SpendingAnalyzer:
         conn.commit()
         conn.close()
         return inserted
+
+    def _load_all_transactions_from_db(self) -> List[Dict]:
+        """Load ALL user transactions from DB for cumulative reporting.
+
+        After _insert_to_db() has run, the DB contains the full history.
+        Reports and aggregations should always use this — not the in-memory
+        list from the current run — so that new statements merge with
+        existing data instead of overwriting.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT tx_date, description, amount, category, source, card_name
+            FROM transactions
+            WHERE user_id = ?
+            ORDER BY tx_date
+        """, (self.user_id,))
+        rows = cur.fetchall()
+        conn.close()
+
+        txs = []
+        for r in rows:
+            txs.append({
+                "date": r["tx_date"],
+                "description": r["description"],
+                "amount": r["amount"],
+                "category": r["category"],
+                "source": r["source"],
+                "card_name": r["card_name"],
+            })
+        return txs
 
     # ──────────────────────────────────────────────────
     # Step 4: Recurring detection
@@ -861,13 +890,22 @@ class SpendingAnalyzer:
     # Step 5: Aggregate + Report
     # ──────────────────────────────────────────────────
 
-    def _aggregate_spending(self):
-        """Aggregate monthly spending by category"""
+    def _aggregate_spending(self, transactions: List[Dict] | None = None):
+        """Aggregate monthly spending by category.
+
+        Args:
+            transactions: If provided, aggregate from this list.
+                          If None, load ALL user transactions from DB
+                          for cumulative reporting.
+        """
+        if transactions is None:
+            transactions = self._load_all_transactions_from_db()
+
         monthly = defaultdict(lambda: defaultdict(float))
         category_total = defaultdict(float)
         card_total = defaultdict(float)
 
-        for tx in self.classified_transactions:
+        for tx in transactions:
             cat = tx.get("category") or "uncategorized"
             if cat in ("income", "card_payment", "payment"):
                 continue
@@ -916,20 +954,30 @@ class SpendingAnalyzer:
         conn.commit()
         conn.close()
 
-    def _generate_report(self, parsed_results: List[Dict], recurring: List[Dict]) -> Dict:
-        """Generate analysis report"""
+    def _generate_report(self, parsed_results: List[Dict], recurring: List[Dict],
+                         all_db_transactions: List[Dict] | None = None) -> Dict:
+        """Generate analysis report from cumulative DB data.
+
+        Args:
+            all_db_transactions: Full transaction history from DB. If None,
+                                 falls back to self.classified_transactions
+                                 (current run only — legacy behavior).
+        """
+        # Use cumulative DB data for the report when available
+        report_txs = all_db_transactions if all_db_transactions is not None else self.classified_transactions
+
         # Calculate period
-        dates = [tx.get("date", "") for tx in self.classified_transactions if tx.get("date")]
+        dates = [tx.get("date", "") for tx in report_txs if tx.get("date")]
         dates = [d for d in dates if d]
         min_date = min(dates) if dates else "?"
         max_date = max(dates) if dates else "?"
 
         # Spending transactions only (exclude income/card_payment)
-        spend_txs = [tx for tx in self.classified_transactions
+        spend_txs = [tx for tx in report_txs
                      if tx.get("category") not in ("income", "card_payment", "payment", None)]
 
         total_spend = sum(abs(tx.get("amount", 0)) for tx in spend_txs)
-        income_txs = [tx for tx in self.classified_transactions if tx.get("category") == "income"]
+        income_txs = [tx for tx in report_txs if tx.get("category") == "income"]
         total_income = sum(abs(tx.get("amount", 0)) for tx in income_txs)
 
         # Category-level aggregation
@@ -946,7 +994,7 @@ class SpendingAnalyzer:
         report_lines = []
         report_lines.append(f"━━━━ Spending Analysis Report ━━━━")
         report_lines.append(f"Period: {min_date} ~ {max_date} ({total_months} months)")
-        report_lines.append(f"Total txns: {len(self.classified_transactions)} | "
+        report_lines.append(f"Total txns: {len(report_txs)} | "
                            f"Spending: {len(spend_txs)} (${total_spend:,.0f}) | "
                            f"Income: {len(income_txs)} (${total_income:,.0f})")
 
@@ -1034,6 +1082,7 @@ class SpendingAnalyzer:
         return {
             "total_parsed": len(self.all_transactions),
             "total_classified": len(self.classified_transactions),
+            "total_cumulative": len(report_txs),
             "total_excluded": len(self.excluded_transactions),
             "total_spend": total_spend,
             "total_income": total_income,
