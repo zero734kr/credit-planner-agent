@@ -129,7 +129,7 @@ conn.commit()
 ### Spending Analysis (Call spending_analyzer pipeline)
 ```python
 from pipeline.spending_analyzer import SpendingAnalyzer
-analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="hajin")
+analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="user001")
 report = analyzer.run(
     pdf_files=["statements/file1.pdf", "statements/file2.pdf"],
     require_resolution=True,
@@ -150,7 +150,7 @@ Do not manually determine categories in Bash or outside the module flow.
 ```python
 from pipeline.spending_analyzer import SpendingAnalyzer
 SpendingAnalyzer.add_exclusion_rule(
-    db_path="db/credit_planner.db", user_id="hajin",
+    db_path="db/credit_planner.db", user_id="user001",
     rule_type="contains", pattern="NELNET",
     match_field="description", reason="Exclude student loan payments"
 )
@@ -159,7 +159,7 @@ SpendingAnalyzer.add_exclusion_rule(
 ### Save User Preference
 ```python
 SpendingAnalyzer.set_preference(
-    db_path="db/credit_planner.db", user_id="hajin",
+    db_path="db/credit_planner.db", user_id="user001",
     key="preferred_alliance", value="skyteam",
     description="Prefer SkyTeam alliance, own AAdvantage/Flying Blue"
 )

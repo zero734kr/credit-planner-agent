@@ -41,7 +41,7 @@ Contents:
 
 ```python
 from pipeline.spending_analyzer import SpendingAnalyzer
-analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="hajin")
+analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="user001")
 report = analyzer.run(pdf_files=[...])
 saved_files = analyzer.save_report(report)  # Auto-saves to report/
 ```

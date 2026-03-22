@@ -201,7 +201,7 @@ Recommended module flow:
 ```python
 from pipeline.spending_analyzer import SpendingAnalyzer
 
-analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="hajin")
+analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="user001")
 result = analyzer.run(pdf_files=[...], require_resolution=True)
 
 if result.get("status") == "needs_resolution":
