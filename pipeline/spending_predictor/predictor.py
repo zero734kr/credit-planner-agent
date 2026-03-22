@@ -12,7 +12,7 @@ Usage:
 
 import sqlite3
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
 import numpy as np
 

@@ -34,8 +34,6 @@ def test(name, condition, detail=""):
 
 
 def build_analyzer(db_path: str):
-    TransactionClassifier.load_or_train = lambda self: None
-
     analyzer = SpendingAnalyzer(db_path=db_path, user_id="test_user")
 
     transactions = [
@@ -79,8 +77,6 @@ def build_analyzer(db_path: str):
             "user_prompt": None,
             "p2p_recipient": None,
             "previous_category": None,
-            "ml_suggestion": "transportation",
-            "ml_top3": [("transportation", 0.1)],
             "description_for_llm": description,
         }
 
@@ -91,8 +87,6 @@ def build_analyzer(db_path: str):
 
 
 def build_fixed_category_analyzer(db_path: str, source: str):
-    TransactionClassifier.load_or_train = lambda self: None
-
     analyzer = SpendingAnalyzer(db_path=db_path, user_id="test_user")
 
     transactions = [
