@@ -35,8 +35,10 @@ TRAINING_DATA_PATH = os.path.join(MODEL_DIR, "training_data.json")
 DEFAULT_DB_PATH = os.path.join(MODEL_DIR, "..", "..", "db", "credit_planner.db")
 
 # ML Classification confidence threshold — below this triggers LLM fallback
-# With 14 classes, random baseline is ~7%, so 15%+ is meaningful classification
-CONFIDENCE_THRESHOLD = 0.15
+# With 14 classes, random baseline is ~7%, so 12%+ is meaningful classification
+# Lowered from 0.15 to 0.12 after expanding training data to 1400+ samples —
+# model is better calibrated, and borderline cases (airlines, etc.) fall 12-14%
+CONFIDENCE_THRESHOLD = 0.12
 
 # P2P service patterns
 P2P_PATTERNS = [
@@ -60,8 +62,23 @@ INCOME_PATTERNS = [
     r"INTEREST PAID",
     r"REFUND",
     r"CASHBACK REWARD",
+    r"CASH BACK REWARD",
     r"STATEMENT CREDIT",
     r"ZELLE FROM\b",  # Zelle incoming is income
+    # Credit card payments (not spending — money moving between accounts)
+    r"MOBILE PYMT\b",
+    r"ONLINE PYMT\b",
+    r"AUTOPAY PAYMENT",
+    r"PAYMENT THANK YOU",
+    r"PAYMENT RECEIVED",
+    r"AUTOMATIC PAYMENT",
+    r"CREDIT CARD PAYMENT",
+    r"ONLINE PAYMENT",
+    r"PAYMENT -",
+    # Cashback / rewards credits
+    r"CREDIT-CASH",
+    r"REWARDS? REDEMPTION",
+    r"POINTS REDEMPTION",
 ]
 
 # Ambiguous merchants — amount-based inference needed
@@ -216,6 +233,12 @@ class TransactionClassifier:
         # ── Step 1: P2P detection ──
         if self._is_p2p(desc_upper):
             return self._handle_p2p(desc_upper, amount, recipient, user_id)
+
+        # ── Step 1.5: Keyword-based category shortcuts ──
+        # Some terms are strong enough signals to skip ML entirely
+        keyword_result = self._check_keyword_shortcuts(desc_upper)
+        if keyword_result:
+            return keyword_result
 
         # ── Step 2: Merchant alias normalization ──
         normalized = self._normalize_merchant(desc_upper)
@@ -380,6 +403,34 @@ class TransactionClassifier:
         except Exception:
             pass
 
+    # ─── Keyword-based category shortcuts ───
+    # Strong keyword signals that reliably indicate a category without ML
+    KEYWORD_SHORTCUTS = [
+        # Travel — airlines, hotels, rental cars
+        (r"\bAIRLINES?\b", "travel"),
+        (r"\bAIRWAYS?\b", "travel"),
+        (r"\bAIRLINE\b", "travel"),
+        (r"\bAIR LINES?\b", "travel"),
+        # Pharmacy / health — explicit pharmacy mentions
+        (r"\bPHARMACY\b", "health"),
+        (r"\bPHARMA\b", "health"),
+    ]
+
+    def _check_keyword_shortcuts(self, desc: str) -> dict | None:
+        """Check for strong keyword signals that bypass ML classification"""
+        for pattern, category in self.KEYWORD_SHORTCUTS:
+            if re.search(pattern, desc):
+                return {
+                    "category": category,
+                    "confidence": 0.75,
+                    "method": "keyword_shortcut",
+                    "needs_user_input": False,
+                    "user_prompt": None,
+                    "p2p_recipient": None,
+                    "previous_category": None,
+                }
+        return None
+
     # ─── Merchant alias normalization ───
 
     def _normalize_merchant(self, desc: str) -> str:
@@ -403,9 +454,27 @@ class TransactionClassifier:
             except Exception:
                 pass
 
+        # Strip POS system prefixes (TST* = Toast, SQ * = Square, etc.)
+        POS_PREFIXES = [
+            r"^TST\*\s*",       # Toast POS
+            r"^SQ\s*\*\s*",     # Square POS
+            r"^SP\s*\*\s*",     # Shopify POS
+            r"^IN\s*\*\s*",     # Invoice / misc POS
+            r"^CKE\s*\*\s*",    # CKE POS
+            r"^PP\*\s*",        # PayPal commerce
+            r"^CLOVER\s*\*\s*", # Clover POS
+        ]
+        stripped = desc
+        for prefix in POS_PREFIXES:
+            stripped = re.sub(prefix, "", stripped)
+
+        # Strip city/state suffixes: "HOBOKENNJ", "NEW YORKNY", "JERSEY CITYNJ"
+        # Pattern: word characters ending with 2-letter state code at end of string
+        stripped = re.sub(r"[A-Z]{2,}\s*[A-Z]{2}\s*$", "", stripped).strip()
+
         # Basic normalization: remove numbers/special chars, trim end
         normalized = re.sub(
-            r"\s*#?\d{3,}.*$", "", desc
+            r"\s*#?\d{3,}.*$", "", stripped
         )  # "WHOLEFDS MKT 10293" → "WHOLEFDS MKT"
         normalized = re.sub(r"\s+", " ", normalized).strip()
         return normalized or desc
