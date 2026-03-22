@@ -8,7 +8,7 @@ Supported formats:
   4. Generic CSV exports — auto-detected date/description/amount columns
 
 Usage:
-  from ml.statement_parser import StatementParser
+  from pipeline.statement_parser import StatementParser
   parser = StatementParser()
   transactions = parser.parse_file("/path/to/statement.pdf")
   # → [{"date": "2026-02-13", "description": "MCDONALD'S ...", "amount": 8.92, "card_name": "Capital One Savor", ...}, ...]

@@ -8,7 +8,7 @@ build/
 .venv/
 
 # ─── ML artifacts (auto-regenerated on retrain) ───
-ml/category_classifier/model.pkl
+pipeline/category_classifier/model.pkl
 
 # ─── User data (personal info) ───
 statements/

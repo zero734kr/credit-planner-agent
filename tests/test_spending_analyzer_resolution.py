@@ -14,9 +14,9 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
 from db.init_db import init_db
-from ml.category_classifier.classifier import TransactionClassifier
-from ml.spending_analyzer import SpendingAnalyzer
-from ml.statement_parser import StatementParser
+from pipeline.category_classifier.classifier import TransactionClassifier
+from pipeline.spending_analyzer import SpendingAnalyzer
+from pipeline.statement_parser import StatementParser
 
 
 passed = 0

@@ -77,46 +77,60 @@ TARGET $25  → shopping (small amount = likely general merchandise)
 WALMART $200 → groceries
 WALMART $15  → shopping
 ```
-When amount alone can't decide (Amazon, etc.), pass to ML.
+When amount alone can't decide (Amazon, etc.), pass to LLM.
 
-#### Layer 3: ML Classification (TF-IDF + Logistic Regression)
+#### Layer 3: Keyword Shortcuts
 
-Classify using `ml/category_classifier/` model. Adopt if confidence >= 15%.
+Strong keyword signals that reliably indicate a category without LLM:
+- AIRLINES/AIRWAYS → travel
+- PHARMACY → health
+- MORTGAGE/RENT PAYMENT → housing
+- ATM FEE/OVERDRAFT → fees
+- INSURANCE → insurance
+- TUITION/STUDENT LOAN → education
+- MEMBERSHIP/SUBSCRIPTION → subscriptions
 
-**14 categories:**
-groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions, housing, fees
+#### Layer 4: Merchant Alias Lookup (Learning Cache)
 
-#### Layer 4: LLM Fallback + Auto-Distillation
+Check `merchant_aliases` table in SQLite. This table is populated by LLM results — once a merchant is classified, it's cached for instant future lookups.
 
-ML confidence < 15% → pass description to LLM for category inference:
+#### Layer 5: LLM Classification (Agent Layer)
+
+Unknown merchants → batch classify via LLM (Haiku/Sonnet):
 
 ```
 LLM Prompt:
-"Classify the following transaction into a category.
- Description: {description}
- Amount: ${amount}
+"Classify the following transactions into categories.
  Possible categories: groceries, dining, gas, travel, entertainment,
  utilities, insurance, shopping, transportation, health, education,
  subscriptions, housing, fees
- Reply with a single category word only."
+ Reply with JSON: {"description": "category", ...}
+
+ Transactions:
+ 1. FIVE GUYS NJ 1924 — $15.42
+ 2. ACME 1744 — $87.23
+ 3. STORMY CAFE JC — $6.50"
 ```
 
-LLM/user-resolved merchant results are **automatically added to training data** (distillation):
+LLM results are **auto-saved to `merchant_aliases`** (learning cache):
 ```python
 classifier.distill_from_llm(description, llm_category)
-# → append to training_data.json → retrain model
-# → next time, similar descriptions are handled by ML directly
+# → INSERT into merchant_aliases table
+# → next time this merchant appears, Layer 4 resolves it instantly
 ```
 
-#### Layer 5: User Question (Last Resort)
+#### Layer 6: User Question (Last Resort)
 
 When even LLM is uncertain:
 ```
 "Could not classify this transaction:
  OBSCURE MERCHANT 99881 — $47.00
  What category is this?"
-→ User responds → add to training data + retrain model
+→ User responds → saved to merchant_aliases for future
 ```
+
+**14 categories:**
+groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions, housing, fees
 
 ### Step 3: Recurring Transaction Detection
 
@@ -185,7 +199,7 @@ Before saving the final report, resolve any pending `P2P` questions with the use
 
 Recommended module flow:
 ```python
-from ml.spending_analyzer import SpendingAnalyzer
+from pipeline.spending_analyzer import SpendingAnalyzer
 
 analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="hajin")
 result = analyzer.run(pdf_files=[...], require_resolution=True)

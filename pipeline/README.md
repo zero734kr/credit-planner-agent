@@ -1,19 +1,17 @@
-# ml/ — Data Preprocessing + ML Layer
+# pipeline/ — Data Processing + Classification Layer
 
 ## Overview
 
-LLM handles decision-making. ML specializes in data preprocessing stages (transaction classification, spending prediction).
+LLM handles decision-making and merchant classification. Deterministic rules handle income/P2P/keyword detection. The `merchant_aliases` SQLite table acts as a learning cache populated by LLM results.
 
 ## Module Structure
 
 ```
-ml/
+pipeline/
 ├── statement_parser.py         # PDF/CSV → transaction extraction
 ├── spending_analyzer.py        # Integrated spending analysis pipeline
-├── category_classifier/        # Transaction category classification (TF-IDF + LogReg)
-│   ├── classifier.py
-│   ├── training_data.json      # Training data (seed 235 + LLM distillation)
-│   └── model.pkl / vectorizer.pkl
+├── category_classifier/        # Deterministic rules + LLM-backed merchant cache
+│   ├── classifier.py           # Classification pipeline
 └── spending_predictor/         # Spending pattern prediction (weighted moving avg + trend)
     └── predictor.py
 ```
@@ -35,7 +33,7 @@ For statements covering 12/03/25~01/02/26, correctly assign year to December tra
 
 ### Usage
 ```python
-from ml.statement_parser import StatementParser
+from pipeline.statement_parser import StatementParser
 parser = StatementParser()
 results = parser.parse_multiple(["stmt1.pdf", "stmt2.pdf"])
 all_txs = parser.get_all_transactions(results)
@@ -48,7 +46,7 @@ all_txs = parser.get_all_transactions(results)
 ### Pipeline (6 stages)
 1. Load user exclusion rules (`transaction_exclusions` table)
 2. Statement parsing (PDF/CSV via StatementParser)
-3. Transaction classification (5-layer pipeline)
+3. Transaction classification (deterministic rules + LLM fallback)
 4. Apply user exclusion rules (transaction level)
 5. SQLite ingestion + Recurring detection
 6. Aggregation + Report generation
@@ -94,20 +92,22 @@ saved_files = analyzer.save_report(report, output_dir="report/")
 
 ---
 
-## category_classifier/ — 5-Layer Classification Pipeline
+## category_classifier/ — Classification Pipeline
+
+### Architecture: Deterministic Rules + LLM + Learning Cache
+
+The classifier uses deterministic rules for clear-cut cases and delegates unknowns to LLM at the agent layer. LLM results are auto-saved to the `merchant_aliases` table (SQLite) for instant future lookups.
 
 ### Classification Order
-1. **Income Detection**: Salary/refunds/interest/Zelle received → excluded from spending
-2. **P2P Handling**: Zelle/Venmo/PayPal → check `p2p_history` → ask user if unknown
-3. **Merchant Alias Normalization**: `merchant_aliases` table + amount-based inference for ambiguous merchants (Walmart, etc.)
-4. **ML Classification**: TF-IDF + Logistic Regression (adopt if confidence >= 15%)
-5. **LLM Fallback + Auto-Distillation**: ML uncertain → LLM inference → auto-add to training data → model retraining
+1. **Income Detection** (regex): Salary, refunds, card payments, cashback → excluded from spending
+2. **P2P Detection** (regex): Zelle/Venmo/PayPal → check `p2p_history` → ask user if unknown
+3. **Keyword Shortcuts** (regex): Strong signals like AIRLINES→travel, PHARMACY→health, MORTGAGE→housing, etc.
+4. **Merchant Alias Lookup** (SQLite): Normalized description matched against `merchant_aliases` table (learning cache)
+5. **Ambiguous Merchant Rules**: Amount-based inference for Walmart/Costco/Target/Amazon/etc.
+6. **LLM Fallback** (agent layer): Unknown merchants → Haiku/Sonnet classifies → result saved to `merchant_aliases` via `distill_from_llm()`
 
 ### 14 Categories
 groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions, housing, fees
-
-### LLM Distillation
-Seed 235 → 350+ after distillation. LLM fallback ratio: 68% → 8% decrease.
 
 ---
 
@@ -122,7 +122,7 @@ Seed 235 → 350+ after distillation. LLM fallback ratio: 68% → 8% decrease.
 - `can_meet_minimum_spend(user_id, required, months)`: Assess SUB minimum spend achievability
 
 ```python
-from ml.spending_predictor.predictor import SpendingPredictor
+from pipeline.spending_predictor.predictor import SpendingPredictor
 predictor = SpendingPredictor(db_path)
 forecast = predictor.predict_monthly("hajin", months_ahead=6)
 result = predictor.can_meet_minimum_spend("hajin", 4000, 3)

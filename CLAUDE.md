@@ -13,6 +13,7 @@ CreditPlanner is an interactive credit strategy agent. It engages users in natur
 - Outputs (reports, roadmaps, etc.) are saved to the `report/` folder.
 - When a dedicated project module exists, use it. Otherwise follow the relevant `skills/` workflow, persist state via Python/SQLite, and avoid ad-hoc Bash-only handling for core logic.
 - For statement analysis, do not generate or save the final report while unresolved `P2P` or `needs_llm` transactions remain. Run the analyzer with `require_resolution=True`, collect user/LLM answers, then call `finalize_after_resolution()` before `save_report()`.
+- **Git commits**: Only create git commits when the user has explicitly instructed it. Never auto-commit after completing a task.
 
 ## Project Purpose
 
@@ -35,7 +36,7 @@ First read the appropriate SKILL.md that matches the user's request, then follow
 - If a user requests CLI, credit limit increase, or credit limit changes, consult `skills/cli-strategy/SKILL.md`
 - If a user requests annual fee, retention, card retention/cancellation, or downgrade strategies, consult `skills/retention-strategy/SKILL.md`
 - If a user requests roadmap, timeline, plan, or strategy, consult `skills/timeline-builder/SKILL.md`
-- If a user requests exclusion rules, transaction exclusions, or preferences, consult the exclusion system section in `ml/README.md`
+- If a user requests exclusion rules, transaction exclusions, or preferences, consult the exclusion system section in `pipeline/README.md`
 - If a user reports application denial, popup jail, rejection, or any issuer block, consult `skills/card-recommendation/SKILL.md` (Denial/Block Response section)
 - For composite requests (e.g., "Register my profile and analyze my statement"), execute skills sequentially in order.
 
@@ -48,11 +49,11 @@ CreditPlanner/
 │   ├── README.md               ← Detailed table schema
 │   ├── init_db.py              ← DB initialization (python db/init_db.py)
 │   └── credit_planner.db       ← SQLite main database
-├── ml/
+├── pipeline/
 │   ├── README.md               ← Classification pipeline, exclusion system, prediction models
 │   ├── statement_parser.py     ← PDF/CSV parser
 │   ├── spending_analyzer.py    ← Integrated spending analysis
-│   ├── category_classifier/    ← TF-IDF + LogReg model
+│   ├── category_classifier/    ← Deterministic rules + LLM-backed merchant cache
 │   └── spending_predictor/     ← Spending prediction
 ├── statements/                  ← User-uploaded statement files
 ├── report/                      ← Generated reports
@@ -67,14 +68,14 @@ CreditPlanner/
 ## Core Rules
 
 ### Spending Analysis
-- 5-layer classification pipeline: Income → P2P → Merchant alias → ML (TF-IDF+LogReg) → LLM fallback + automatic distillation
+- Classification pipeline: Income → P2P → Keywords → Merchant Cache (SQLite) → Ambiguous Rules → LLM (agent layer). LLM classifies unknowns, results cached in `merchant_aliases` for instant future lookups.
 - Use transaction-level exclusions. When a user requests, register rules in the `transaction_exclusions` table.
 - User preferences are persisted in the `user_preferences` table.
 - 14 categories: groceries, dining, gas, travel, entertainment, utilities, insurance, shopping, transportation, health, education, subscriptions, housing, fees
 - `P2P` transfers must be confirmed at the transaction level when purpose is unclear; do not assume the same recipient always implies the same category.
 - Normalize the user's freeform P2P/merchant answers at the agent layer before calling `resolve_pending()`. The Python analyzer should receive canonical categories (or `skip`) only.
 - `needs_llm` merchants should be resolved before the final report/forecast is presented to the user.
-- See `ml/README.md` for detailed spending analysis documentation.
+- See `pipeline/README.md` for detailed spending analysis documentation.
 
 ### Decision Logging
 - `logs/decision_log.jsonl` — append-only
@@ -128,7 +129,7 @@ conn.commit()
 
 ### Spending Analysis (Call spending_analyzer pipeline)
 ```python
-from ml.spending_analyzer import SpendingAnalyzer
+from pipeline.spending_analyzer import SpendingAnalyzer
 analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="hajin")
 report = analyzer.run(
     pdf_files=["statements/file1.pdf", "statements/file2.pdf"],
@@ -142,12 +143,13 @@ if report.get("status") == "needs_resolution":
     report = analyzer.finalize_after_resolution()
 saved = analyzer.save_report(report)
 ```
-This pipeline automatically handles the 5-layer classification (Income → P2P → Merchant alias → ML → LLM fallback).
-Do not manually determine categories in Bash or outside the module flow; resolve pending items through `resolve_pending()`, then finalize the report.
+This pipeline runs deterministic classification (Income → P2P → Keywords → Merchant Cache → Ambiguous Rules) and delegates unknowns to `needs_llm`.
+The agent layer resolves `needs_llm` items (via LLM batch call), then calls `resolve_pending()`. Results auto-distill to `merchant_aliases` for future instant lookup.
+Do not manually determine categories in Bash or outside the module flow.
 
 ### Register Transaction Exclusion Rule
 ```python
-from ml.spending_analyzer import SpendingAnalyzer
+from pipeline.spending_analyzer import SpendingAnalyzer
 SpendingAnalyzer.add_exclusion_rule(
     db_path="db/credit_planner.db", user_id="hajin",
     rule_type="contains", pattern="NELNET",

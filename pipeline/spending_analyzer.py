@@ -10,7 +10,7 @@ Pipeline:
   6. Generate analysis report
 
 Usage:
-  from ml.spending_analyzer import SpendingAnalyzer
+  from pipeline.spending_analyzer import SpendingAnalyzer
   analyzer = SpendingAnalyzer(db_path, user_id="hajin")
   report = analyzer.run(pdf_files=[...])
 """
@@ -28,8 +28,8 @@ from typing import List, Dict, Optional, Callable
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
-from ml.statement_parser import StatementParser
-from ml.category_classifier.classifier import TransactionClassifier, ALL_CATEGORIES
+from pipeline.statement_parser import StatementParser
+from pipeline.category_classifier.classifier import TransactionClassifier, ALL_CATEGORIES  # noqa: F401
 
 
 class SpendingAnalyzer:
@@ -45,7 +45,6 @@ class SpendingAnalyzer:
         self.user_id = user_id
         self.parser = StatementParser()
         self.classifier = TransactionClassifier(db_path=db_path)
-        self.classifier.load_or_train()
 
         # Analysis results storage
         self.parsed_results = []

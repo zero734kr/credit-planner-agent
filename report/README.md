@@ -40,7 +40,7 @@ Contents:
 ## Generation Method
 
 ```python
-from ml.spending_analyzer import SpendingAnalyzer
+from pipeline.spending_analyzer import SpendingAnalyzer
 analyzer = SpendingAnalyzer(db_path="db/credit_planner.db", user_id="hajin")
 report = analyzer.run(pdf_files=[...])
 saved_files = analyzer.save_report(report)  # Auto-saves to report/

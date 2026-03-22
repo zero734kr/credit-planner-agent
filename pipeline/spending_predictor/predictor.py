@@ -5,7 +5,7 @@ Spending Pattern Predictor
 - Alternative: Prophet/ARIMA can be adopted once sufficient data accumulates
 
 Usage:
-  from ml.spending_predictor.predictor import SpendingPredictor
+  from pipeline.spending_predictor.predictor import SpendingPredictor
   predictor = SpendingPredictor(db_path)
   forecast = predictor.predict_monthly(user_id, months_ahead=6)
 """

@@ -365,33 +365,6 @@ def init_db(db_path: str | None = None, reset: bool = False) -> str:
 
     print(f"✓ DB initialization complete: {db_path}")
 
-    # ─── ML classifier retraining ───
-    # Auto-retrain if training_data.json is newer than model.pkl
-    try:
-        import os as _os
-        classifier_dir = _os.path.join(BASE_DIR, "ml", "category_classifier")
-        model_path = _os.path.join(classifier_dir, "model.pkl")
-        training_path = _os.path.join(classifier_dir, "training_data.json")
-
-        need_retrain = False
-        if not _os.path.exists(model_path):
-            need_retrain = True
-        elif _os.path.exists(training_path):
-            if _os.path.getmtime(training_path) > _os.path.getmtime(model_path):
-                need_retrain = True
-
-        if need_retrain:
-            import sys as _sys
-            _sys.path.insert(0, BASE_DIR)
-            from ml.category_classifier.classifier import TransactionClassifier
-            clf = TransactionClassifier(db_path=db_path)
-            n = clf.train()
-            print(f"✓ Classifier retraining complete: {n} samples")
-        else:
-            print("✓ Classifier model up to date")
-    except Exception as e:
-        print(f"⚠ Classifier learning skipped: {e}")
-
     return db_path
 
 

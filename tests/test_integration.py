@@ -167,28 +167,48 @@ test(f"Citi DC cooldown check ({citi_days} days elapsed, requires 180 days)",
      citi_days < 180 or citi_days >= 180)
 
 # ═══ 5. Category Classifier Test ═══
-print("\n5. ML Category Classifier")
+print("\n5. Category Classifier (Deterministic Layers)")
 
-from ml.category_classifier.classifier import TransactionClassifier
+from pipeline.category_classifier.classifier import TransactionClassifier
 clf = TransactionClassifier(db_path=DB_PATH)
-clf.load_or_train()
 
-test_cases = {
-    "WHOLEFDS MKT 10293": "groceries",
-    "SHELL OIL 57432": "gas",
-    "STARBUCKS 12345": "dining",
-    "NETFLIX.COM": "entertainment",
-    "CVS PHARMACY": "health",
+# Test deterministic layers only (income, keyword shortcuts, merchant alias, ambiguous rules).
+# LLM-dependent classification is non-deterministic and tested separately.
+deterministic_cases = {
+    # Income detection
+    ("MOBILE PYMT - THANK YOU", 500.0): ("income", "income"),
+    ("PAYMENT THANK YOU", 200.0): ("income", "income"),
+    # Keyword shortcuts
+    ("UNITED AIRLINES", 350.0): ("travel", "keyword_shortcut"),
+    ("CVS/PHARMACY 1234", 12.0): ("health", "keyword_shortcut"),
+    ("GEICO INSURANCE", 180.0): ("insurance", "keyword_shortcut"),
+    ("ATM FEE", 3.0): ("fees", "keyword_shortcut"),
+    ("NETFLIX SUBSCRIPTION", 15.99): ("subscriptions", "keyword_shortcut"),
 }
 
-for desc, expected in test_cases.items():
-    predicted = clf.predict(desc)
-    test(f"Classification: {desc} → {predicted}", predicted == expected, f"expected {expected}")
+for (desc, amount), (expected_cat, expected_method) in deterministic_cases.items():
+    result = clf.classify(desc, amount)
+    test(f"Classify: {desc} → {result['category']} ({result['method']})",
+         result["category"] == expected_cat,
+         f"expected {expected_cat}/{expected_method}, got {result['category']}/{result['method']}")
+
+# Test that unknown merchants correctly delegate to needs_llm
+unknown_result = clf.classify("RANDOMSHOP XYZ 99", 25.0)
+test("Unknown merchant → needs_llm",
+     unknown_result["method"] == "needs_llm",
+     f"got method={unknown_result['method']}")
+
+# Test distill_from_llm and subsequent merchant alias lookup
+clf.distill_from_llm("RANDOMSHOP XYZ 99", "shopping")
+cached_result = clf.classify("RANDOMSHOP XYZ 99", 25.0)
+test("After distill → merchant_alias lookup",
+     cached_result["category"] == "shopping" and cached_result["method"] == "merchant_alias",
+     f"got {cached_result['category']}/{cached_result['method']}")
 
 # ═══ 6. Spending Predictor Test ═══
 print("\n6. Spending Predictor")
 
-from ml.spending_predictor.predictor import SpendingPredictor
+from pipeline.spending_predictor.predictor import SpendingPredictor
 
 # Dummy data for spending_pattern
 spending = [
@@ -274,8 +294,8 @@ expected_paths = [
     "CLAUDE.md",
     "db/init_db.py",
     "db/credit_planner.db",
-    "ml/category_classifier/classifier.py",
-    "ml/spending_predictor/predictor.py",
+    "pipeline/category_classifier/classifier.py",
+    "pipeline/spending_predictor/predictor.py",
     "skills/profile-intake/SKILL.md",
     "skills/statement-analysis/SKILL.md",
     "skills/card-recommendation/SKILL.md",
