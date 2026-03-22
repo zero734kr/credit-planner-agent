@@ -192,6 +192,11 @@ for (desc, amount), (expected_cat, expected_method) in deterministic_cases.items
          result["category"] == expected_cat,
          f"expected {expected_cat}/{expected_method}, got {result['category']}/{result['method']}")
 
+# Clean any leftover merchant_aliases from prior runs before testing needs_llm
+cur.execute("DELETE FROM merchant_aliases WHERE alias_pattern LIKE '%RANDOMSHOP%'")
+conn.commit()
+clf = TransactionClassifier(db_path=DB_PATH)  # Re-init to clear in-memory cache
+
 # Test that unknown merchants correctly delegate to needs_llm
 unknown_result = clf.classify("RANDOMSHOP XYZ 99", 25.0)
 test("Unknown merchant → needs_llm",
