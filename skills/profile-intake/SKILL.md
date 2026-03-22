@@ -12,6 +12,15 @@ Collect user's credit profile interactively and save it to SQLite DB.
 
 ## Conversation Flow
 
+### Step 0: Identify User
+
+Before any profile operation, determine the `user_id`:
+1. Check if there is exactly one existing profile in `user_profile`. If so, use that `user_id`.
+2. If multiple profiles exist, ask: "Which profile are you updating?" and list them.
+3. If no profile exists, ask the user for a name or handle to use as their `user_id`.
+
+The user_id is used across all tables (transactions, spending_pattern, user_cards, etc.) — a mismatch fragments data silently.
+
 ### Step 1: Check Existing Profile
 
 ```sql

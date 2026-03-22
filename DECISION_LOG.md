@@ -148,3 +148,23 @@ Skills: `profile-intake`, `statement-analysis`, `card-recommendation`, `cli-stra
 **Claude's fix**: Added `_load_all_transactions_from_db()` → after inserting new transactions, reporting now queries the full `transactions` table. `_aggregate_spending()` and `_generate_report()` accept DB-wide data. `_update_spending_pattern()` rebuilds from cumulative totals.
 
 **Principle**: The DB is the source of truth. In-memory state is ephemeral; reports must always reflect the full picture.
+
+---
+
+## #23 — User ID Must Be Explicit, Never Hardcoded
+
+**Problem**: During development, statements were processed under both `"default"` and `"hajin"` user IDs. The `hajin` rows were a strict subset of `default` (85/85 overlap) — same PDFs, different user_id. The `SpendingAnalyzer` constructor defaults to `user_id="default"`, so early runs without explicit user identification silently fragmented the data.
+
+**Fix**: Added "Step 0: Resolve user_id" to both `profile-intake` and `statement-analysis` skills. Rules: (1) if one profile exists, use it; (2) if multiple, ask; (3) if none, ask the user for a name. Never fall back to a hardcoded default. Consolidated existing DB to single `hajin` user_id.
+
+**Principle**: Implicit defaults cause silent data fragmentation. Always resolve identity explicitly before writing to shared tables.
+
+---
+
+## #24 — Partial-Month Exclusion in Spending Predictor
+
+**Problem**: The spending predictor treated the current (incomplete) month the same as full months. Mid-March with $200 in groceries would drag the WMA down from a true ~$600/month average, producing an artificially low forecast. This cascades into bad min-spend feasibility assessments.
+
+**Claude's fix**: `predict_monthly()` now excludes the current month (`datetime.now().strftime("%Y-%m")`) from WMA and trend calculations. Only fully elapsed months are used for forecasting. If only the current month has data for a category, that category is skipped.
+
+**Principle**: Incomplete data should be excluded from trend analysis, not normalized or extrapolated.

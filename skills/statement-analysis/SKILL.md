@@ -12,6 +12,15 @@ Parse user-submitted bank/card statements (PDF/CSV), classify transactions by ca
 
 ## Processing Pipeline
 
+### Step 0: Resolve user_id
+
+Before running the analyzer, determine the correct `user_id`:
+1. If the user has a registered profile, use that `user_id`.
+2. If no profile exists, check which `user_id` has existing transactions in the DB.
+3. If ambiguous or no data exists, ask the user for their name/handle.
+
+Mismatched user_ids fragment data across tables — the cumulative report will miss historical transactions.
+
 ### Step 1: File Parsing
 
 **CSV:**
