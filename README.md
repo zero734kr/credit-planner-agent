@@ -4,6 +4,8 @@
 > CreditPlanner is an interactive AI agent that analyzes your credit profile and provides recommendations based on natural language.
 > No commands to memorize; just talk to it naturally.
 
+System design and architectural decisions are documented separately in [DECISION_LOG.md](./DECISION_LOG.md). This document focuses on how to use the agent efficiently from a user perspective.
+
 ---
 
 ## 1. What is CreditPlanner?
